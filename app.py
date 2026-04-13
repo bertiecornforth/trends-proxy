@@ -59,6 +59,64 @@ if __name__ == '__main__':
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from pytrends.request import TrendReq
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=False)
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
+@app.route('/trends')
+def trends():
+    keyword = request.args.get('q')
+    if not keyword:
+        return jsonify({"error": "No keyword provided"}), 400
+    try:
+        pytrends = TrendReq(hl='en-US', tz=0)
+        pytrends.build_payload([keyword], timeframe='today 3-m', geo='')
+        df = pytrends.interest_over_time()
+        if df.empty or keyword not in df.columns:
+            return jsonify({"keyword": keyword, "values": [], "dates": []}), 200
+        values = df[keyword].tolist()
+        dates = [str(d.date()) for d in df.index]
+        return jsonify({"keyword": keyword, "values": values, "dates": dates})
+    except Exception as e:
+        return jsonify({"error": str(e), "values": []}), 500
+
+@app.route('/trends/multi')
+def trends_multi():
+    keywords = request.args.getlist('q')
+    if not keywords:
+        return jsonify({"error": "No keywords provided"}), 400
+    keywords = keywords[:5]
+    try:
+        pytrends = TrendReq(hl='en-US', tz=0)
+        pytrends.build_payload(keywords, timeframe='today 3-m', geo='')
+        df = pytrends.interest_over_time()
+        if df.empty:
+            return jsonify({}), 200
+        dates = [str(d.date()) for d in df.index]
+        result = {}
+        for kw in keywords:
+            if kw in df.columns:
+                result[kw] = {"values": df[kw].tolist(), "dates": dates}
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/health')
+def health():
+    return jsonify({"status": "ok"})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from pytrends.request import TrendReq
 import time
 
 app = Flask(__name__)
